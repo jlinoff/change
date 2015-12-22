@@ -1,0 +1,4 @@
+FOO=bar
+FOObar=spam
+barFOOspam=wombatFOO
+FOO.bar=spam.FOO
