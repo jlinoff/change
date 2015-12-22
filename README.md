@@ -1,8 +1,12 @@
 # change
-Python script to change the contents or names of a set of files using regular expressions.
-I find it handy for changing project files.
+Python script to change the contents or names of a set of files using
+regular expressions.
 
-You specify the old pattern, the new pattern and the list of files.
+I find it handy for changing variable names and version numbers on a
+project.
+
+To use it you specify the old pattern, the new pattern and the list of
+files.
 
 The patterns are in python regular expression format which makes it
 easy to change text that contains things like forward slashes.

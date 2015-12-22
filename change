@@ -37,6 +37,12 @@ r'''
 This a tool that allows you to conveniently change text in a group of
 files using regular expressions. It will also change file names.
 
+I find it handy for changing variable names and version numbers on a
+project.
+
+To use it you specify the old pattern, the new pattern and the list of
+files.
+
 You specify the old pattern, the new pattern and the list of files.
 
 The patterns are in python regular expression format which makes it
@@ -58,6 +64,7 @@ in several files.
     $ cat foo-bar.txt
     foo foo
 
+    $ # Note that this command is run in verbose mode (-v).
     $ {script_name} -v -p tmp/ foo bar foo.txt foo-bar.txt
     Change File Contents             : True
     Change File Names                : True
@@ -86,6 +93,10 @@ in several files.
 
 If you want to substitute characters that used in regular expressions
 like '.', you must escape it with a backslash '\.'.
+
+If you want to only replace words use '\b'.
+
+For other options see the documentation for Python regular expressions.
 '''
 import argparse
 import glob
