@@ -218,7 +218,7 @@ The default is to override existing files.
     parser.add_argument('-v', '--verbose',
                         action='count',
                         default=0,
-                        help='''Increate the level of verbosity.
+                        help='''Increase the level of verbosity.
   -v  = show the summary stats
  -vv  = show each file as it is changed
 -vvv  = show information about the changes in each file
