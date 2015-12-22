@@ -1,0 +1,542 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Author:        Joe Linoff
+# Version:       1.0.0
+# Creation Date: 2015-12-21
+# Project:       https://github.com/jlinoff/change
+# Description:
+#     This script allows you to make changes to multiple files at
+#     once. It is extremely convenient for cases when you want to
+#     change things like the program name or the version number.
+#
+# License (MIT Open Source):
+#     Copyright (c) 2015 Joe Linoff
+#
+#     Permission is hereby granted, free of charge, to any person
+#     obtaining a copy of this software and associated documentation
+#     files (the "Software"), to deal in the Software without
+#     restriction, including without limitation the rights to use,
+#     copy, modify, merge, publish, distribute, sublicense, and/or sell
+#     copies of the Software, and to permit persons to whom the
+#     Software is furnished to do so, subject to the following
+#     conditions:
+#
+#     The above copyright notice and this permission notice shall be
+#     included in all copies or substantial portions of the Software.
+#
+#     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#     EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+#     OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#     NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
+#     HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+#     WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+#     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+#     OTHER DEALINGS IN THE SOFTWARE.
+r'''
+This a tool that allows you to conveniently change text in a group of
+files using regular expressions. It will also change file names.
+
+You specify the old pattern, the new pattern and the list of files.
+
+The patterns are in python regular expression format which makes it
+easy to change text that contains things like forward slashes.
+
+Here is a detailed example thats shows how to change foo to bar
+in several files.
+
+    $ tree example/
+    example
+    ├── foo-bar.txt
+    └── foo.txt
+
+    0 directories, 2 files
+
+    $ cat foo.txt
+    foo foo
+
+    $ cat foo-bar.txt
+    foo foo
+
+    $ {script_name} -v -p tmp/ foo bar foo.txt foo-bar.txt
+    Change File Contents             : True
+    Change File Names                : True
+    Dryrun                           : False
+    Num Files                        : 2
+    Prefix                           : "tmp/"
+    Pattern                          : "foo"
+    Replacement                      : "bar"
+    Verbosity                        : 1
+    Version                          : 1.0.0
+    Total Files Changed              : 2
+    Total Files With Name Changes    : 2
+    Total Files With Content Changes : 2
+    Total Content Changes            : 4
+    Total Changes Per File           : 2.0
+    Total Directories Created        : 1
+    Elapsed Time                     : 0.00 secs
+    Time Per File                    : 0.00
+
+    $ tree tmp
+    tmp
+    ├── bar-bar.txt
+    └── bar.txt
+
+    0 directories, 2 files
+
+If you want to substitute characters that used in regular expressions
+like '.', you must escape it with a backslash '\.'.
+'''
+import argparse
+import glob
+import os
+import re
+import shutil
+import stat
+import sys
+import time
+
+VERSION = '1.0.0'    # 2015-12-21
+
+
+def getopts():
+    '''
+    Get the command line options.
+    '''
+    base = os.path.basename(sys.argv[0])
+
+    def usage():
+        '''usage'''
+        usage = r'{0} [OPTIONS] <PATTERN> <REPLACEMENT> <FILE> [<FILES>]'.format(base)
+        return usage
+
+    def epilog():
+        '''epilogue'''
+        epilog = r'''
+examples:
+  $ # Example 1. Help
+  $ {0} -h
+  $ {0} --help
+
+  $ # Example 2. Change all 3 character strings that start with 'fo'.
+  $ {0} 'fo.' 'bar' *
+
+  $ # Example 3. Change all 3 character strings that are with 'fo.'.
+  $ {0} 'fo\.' 'bar' *
+
+  $ # Example 4. Change the word "foo". Ignore words like "foobar".
+  $ {0} '\bfoo\b' 'bar' *
+
+  $ # Example 5. Change the word "foo" in files but do not change file names
+  $ #            using -c (change contents only).
+  $ {0} -c 'foo' 'bar' *.txt
+
+  $ # Example 6. Change the string "foo" to "bar" in file names but not in file
+  $ #            contents using -f (change file names only).
+  $ {0} -f 'foo' 'bar' *.txt
+
+  $ # Example 7. Dryrun to change "foo" to "bar". Nothing actually changes.
+  $ {0} -d 'foo' 'bar' *.txt
+
+  $ # Example 8. Dryrun to change "foo" to "bar" that shows the summary update status.
+  $ #            Nothing actually changes.
+  $ {0} -d -v 'foo' 'bar' *.txt
+
+  $ # Example 9. Dryrun to change "foo" to "bar" that shows the summary update status and
+  $ #            the files changed.
+  $ {0} -d -vv 'foo' 'bar' *.txt
+
+  $ # Example 10. Make change but do not alter the original files by using the prefix.
+  $ #             Output everything to the /tmp/foo2bar directory tree.
+  $ {0} -p /tmp/foo2bar/ -v 'foo' 'bar' *.txt
+
+  $ # Example 11. Make change but do not alter the original files by using the prefix.
+  $ #             Add a 'zzz_' prefix.
+  $ {0} -p zzz_ -v 'foo' 'bar' *.txt
+ '''.format(base)
+        return epilog
+
+    def fix_text(token):
+        '''fix text'''
+        lookup = {
+            'show this help message and exit': 'Show this help message and exit.\n ',
+        }
+        return lookup.get(token, token)
+
+    argparse._ = fix_text
+
+    afc = argparse.RawTextHelpFormatter
+    rawdoc = __doc__.format(script_name=base)
+    desc = 'description:{0}'.format('\n  '.join(rawdoc.split('\n')))
+    parser = argparse.ArgumentParser(formatter_class=afc,
+                                     description=desc[:-2],
+                                     usage=usage(),
+                                     epilog=epilog())
+
+    parser.add_argument('-c', '--contents-only',
+                        action='store_true',
+                        help='''Only change file contents, don't change file names.
+The default is to change file names and contents.
+ ''')
+
+    parser.add_argument('-d', '--dryrun',
+                        action='store_true',
+                        help='''Don't change anything.
+ ''')
+
+    parser.add_argument('-f', '--filenames-only',
+                        action='store_true',
+                        help='''Only change file names, don't change file contents.
+The default is to change file names and contents.
+ ''')
+
+    parser.add_argument('--nowarn',
+                        action='store_true',
+                        help='''Disable warnings.
+The default is to print warnings.
+ ''')
+
+    parser.add_argument('-p', '--prefix',
+                        type=str,
+                        default='',
+                        help='''Prefix to append to output files.
+This can be used to avoid overwriting existing files.
+The default is to override existing files.
+ ''')
+
+    parser.add_argument('-v', '--verbose',
+                        action='count',
+                        default=0,
+                        help='''Increate the level of verbosity.
+  -v  = show the summary stats
+ -vv  = show each file as it is changed
+-vvv  = show information about the changes in each file
+ ''')
+
+    parser.add_argument('-V', '--version',
+                        action='version',
+                        help='%(prog)s v{0}'.format(VERSION))
+
+    parser.add_argument('PATTERN',
+                        type=str,
+                        help='''The PATTERN to replace.
+This can be a python regular expression.
+Make sure that you quote the PATTERN if
+there is whitespace or shell wildcards.
+ ''')
+
+    parser.add_argument('REPLACEMENT',
+                        type=str,
+                        help='''The REPLACEMENT.
+This can be a python regular expression.
+Make sure that you quote the PATTERN if
+there is whitespace or shell wildcards.
+ ''')
+
+    parser.add_argument('FILES',
+                        type=str,
+                        nargs='+',
+                        help='''Files to change.
+ ''')
+
+    opts = parser.parse_args()
+    return opts
+
+
+def error(msg, exit_on_error=True):
+    '''
+    Report an error message and exit.
+    '''
+    sys.stderr.write('ERROR: ' + msg + '\n')
+    if exit_on_error is True:
+        sys.exit(1)
+
+
+def warning(msg):
+    '''
+    Report a warning message.
+    '''
+    sys.stderr.write('WARNING: ' + msg + '\n')
+
+
+def get_files(opts):
+    '''
+    Get all of the files.
+    If any do not exist, fail with an error.
+    '''
+
+    # Find the longest prefix for all input file names.
+    ifiles = []
+    prefix = []
+    for path_pattern in opts.FILES:
+        for path in glob.glob(path_pattern):
+            if os.path.exists(path) is False:
+                warn('File does not exist: "{}".'.format(path))
+                continue
+            elif os.path.isfile(path) is False:
+                warn('File is not a file: "{}".'.format(path))
+                continue
+
+            # Look for the longest common directory name.
+            ifile = os.path.abspath(path)
+            ifiles.append((path, ifile))
+            dirs = os.path.dirname(ifile).split(os.sep)
+            if len(prefix) == 0:
+                prefix = dirs
+            else:
+                # Compare both paths, truncate after the first mismatch.
+                num = min(len(prefix), len(dirs))
+                prefix = prefix[:num]  # Can never be larger than this
+                for i in range(num):
+                    if prefix[i] != dirs[i]:
+                        prefix = prefix[:i]
+                        break
+
+    # Now figure out the common relative path for all of the input files.
+    # Sadly I can't use relpath but it is still fairly simple.
+    # This will be used to construct the output file names.
+    # Example:
+    #    prefix = "/alt/blot/"
+    #    ifiles = [ "/foo/bar/spam1", "/foo/spam2" ]
+    #    common prefix = "/foo/"
+    #    ofiles = [ "/alt/blot/bar/spam1", "/alt/blot/spam2" ]
+    prefix_str = os.sep.join(prefix)
+    prefix_str_len = len(prefix_str)
+    files = []
+    for fpair in ifiles:
+        ifile_rel = fpair[0]
+        ifile = fpair[1]  # abs path
+        relpath = ifile[prefix_str_len:]
+        if relpath[0] == os.path.sep:
+            relpath = relpath[1:]
+        if opts.prefix != '':
+            ofile = opts.prefix + relpath
+        else:
+            ofile = relpath
+        files.append((ifile_rel, ofile))
+
+    return files
+
+
+def print_kvpair(key, val, keylen=32):
+    '''
+    Print a key-value pair so that all of the output
+    aligns.
+    '''
+    print('{:<{}} : {}'.format(key, keylen, str(val)))
+
+
+def cmdline():
+    '''
+    Construct the cmd line.
+    '''
+    cmd = sys.argv[0]
+    for i in range(1, len(sys.argv)):
+        opt = sys.argv[i]
+        cmd += ' '
+        if opt.find(' ') >= 0:
+            cmd += '"' + opt + '"'
+        else:
+            cmd += opt
+    return cmd
+
+
+def info(opts, files):
+    '''
+    Display info in verbose mode.
+    '''
+    if opts.verbose < 1:
+        return
+
+    change_file_contents = False if opts.contents_only is True else True
+    change_file_names    = False if opts.filenames_only is True else True
+
+    print_kvpair('Command Line', cmdline())
+    print_kvpair('Change File Contents', change_file_contents)
+    print_kvpair('Change File Names', change_file_names)
+    print_kvpair('Dryrun', opts.dryrun)
+    print_kvpair('Num Files', len(files))
+    print_kvpair('Prefix', '"{}"'.format(opts.prefix))
+    print_kvpair('Pattern', '"{}"'.format(opts.PATTERN))
+    print_kvpair('Replacement', '"{}"'.format(opts.REPLACEMENT))
+    print_kvpair('Verbosity', opts.verbose)
+    print_kvpair('Version', VERSION)
+
+
+def change_file_stats(opts, ifile, stats, lstats):
+    '''
+    Report the stats.
+    '''
+    # Print the status data.
+    if opts.verbose == 2:  # Table
+        if i == 0:  # header
+            print('')
+            print('         Content  Name     Input       Output')
+            print('  File   Changed  Changed  File Size   File Size   {:{}}  {:{}}'.format('Input File',
+                                                                                           stats['max_ifile_len'],
+                                                                                           'Output File',
+                                                                                           stats['max_ofile_len']))
+            print('  =====  =======  =======  ==========  ==========  {}  {}'.format('='*max_ifile_len, '='*max_ofile_len))
+
+        print('  {:>5}  {:<7}  {:<7}  {:>10}  {:>10}  {:{}}  {:{}}'.format(i+1,
+                                                                           str(lstats['ofile_content_num_changes']),
+                                                                           str(ofile_name_num_changes),
+                                                                           len(ifile_content),
+                                                                           len(ofile_content),
+                                                                           '"{}"'.format(ifile),
+                                                                           stats['max_ifile_len'],
+                                                                           '"{}"'.format(lstats['ofile']),
+                                                                           stats['max_ofile_len']))
+    elif opts.verbose > 2:
+        print('')
+        print_kvpair('Input File', ifile)
+        print_kvpair('  Input File Size', len(lstats['ifile_content']))
+        print_kvpair('  Input File Mode', '{:04o}'.format(lstats['ifile_mode']))
+        print_kvpair('  Num Name Changes', lstats['ofile_name_num_changes'])
+        print_kvpair('  Num Content Changes', lstats['ofile_content_num_changes'])
+        print_kvpair('  Output File', lstats['ofile'])
+        print_kvpair('  Output File Size', len(lstats['ofile_content']))
+
+
+def change_file_detect(opts, ifile, stats, lstats):
+    '''
+    Detect the changes.
+    '''
+    # Change the output file name.
+    # This will be ignored later if necessary.
+    lstats['ofile_name_num_changes'] = 0
+    if opts.contents_only is False:
+        lstats['ofile'], lstats['ofile_name_num_changes'] = re.subn(stats['re_pattern'], opts.REPLACEMENT, lstats['ofile'])
+        if lstats['ofile_name_num_changes'] > 0:
+            stats['num_files_with_name_changes'] += 1
+
+    # Get and change the file contents.
+    if opts.filenames_only is False:
+        try:
+            with open(ifile, 'r') as ifp:
+                lstats['ifile_content'] = ifp.read()
+                lstats['ofile_content'] = lstats['ifile_content']
+        except IOError:
+            # Input file no longer exists, remove the output file.
+            os.remove(ofile)
+            return  # file doesn't exist anymore, skip it
+
+        lstats['ofile_content'], lstats['ofile_content_num_changes'] = re.subn(stats['re_pattern'],
+                                                                               opts.REPLACEMENT,
+                                                                               lstats['ifile_content'])
+        if lstats['ofile_content_num_changes'] > 0:
+            stats['num_files_with_content_changes'] += 1
+            stats['num_content_changes'] += lstats['ofile_content_num_changes']
+
+
+def change_file_modify(opts, ifile, stats, lstats):
+    '''
+    Make the modifications.
+    '''
+    if opts.dryrun is False:
+        dirname = os.path.dirname(os.path.abspath(lstats['ofile']))
+        if os.path.exists(dirname) is False:
+            stats['num_directories_created'] += 1
+            os.makedirs(dirname)
+
+        if opts.prefix != '' and opts.nowarn is False:
+            if os.path.exists(lstats['ofile']):
+                warning('Overwriting file: {} --> {}'.format(ifile, lstats['ofile']))
+
+        with open(lstats['ofile'], 'w') as ofp:
+            ofp.write(lstats['ofile_content'])
+        os.chmod(lstats['ofile'], lstats['ifile_mode'])
+    else:
+        if opts.prefix != '' and opts.nowarn is False:
+            if os.path.exists(lstats['ofile']) or lstats['ofile'] in stats['dryrun_written_files']:
+                warning('Overwriting file: {} --> {}'.format(ifile, lstats['ofile']))
+
+        # Save the dryrun output file names for later testing.
+        stats['dryrun_written_files'][lstats['ofile']] = True
+
+
+def change_file(opts, ifile, ofile, stats):
+    '''
+    Change an input file.
+    '''
+    lstats = {
+        'ofile': ofile,  # this can change after a pattern substitution
+        'ofile_name_num_changes': 0,
+        'ofile_content': '',
+        'ofile_content_num_changes': 0,
+        'ifile_mode': (os.stat(ifile)[stat.ST_MODE]) & 0x1FF,
+        'ifile_content': '',
+        'ifile_content_num_changes': 0,
+    }
+
+    change_file_detect(opts, ifile, stats, lstats)
+    change_file_stats(opts, ifile, stats, lstats)
+
+    # Update the stats.
+    if lstats['ofile_name_num_changes'] > 0 or lstats['ofile_content_num_changes'] > 0:
+        stats['num_files_changed'] += 1
+
+    change_file_modify(opts, ifile, stats, lstats)
+
+
+def change_summary(opts, files, stats):
+    '''
+    Report the summary stats.
+    '''
+    # Summary
+    if opts.verbose > 0:
+        if opts.verbose > 1:
+            print('')
+
+        print_kvpair('Total Files Changed', stats['num_files_changed'])
+        print_kvpair('Total Files With Name Changes', stats['num_files_with_name_changes'])
+        print_kvpair('Total Files With Content Changes', stats['num_files_with_content_changes'])
+        print_kvpair('Total Content Changes', stats['num_content_changes'])
+        print_kvpair('Total Changes Per File', float(stats['num_content_changes']) / float(len(files)))
+        print_kvpair('Total Directories Created', stats['num_directories_created'])
+
+        elapsed = time.time() - stats['start']
+        print_kvpair('Elapsed Time', '{:.2f} secs'.format(elapsed))
+        print_kvpair('Time Per File', '{:.2f}'.format(elapsed/float(len(files))))
+
+
+def change(opts, files):
+    '''
+    Change the files and the contents.
+    '''
+    max_ifile_len = 2 + max(10, max([len(fpair[0]) for fpair in files]))
+    max_ofile_len = 2 + max(11, max([len(fpair[1]) for fpair in files]))
+    stats = {'num_files_with_name_changes': 0,
+             'num_files_with_content_changes': 0,
+             'num_content_changes': 0,
+             'num_files_changed': 0,
+             'num_directories_created': 0,
+             'written_files': {},  # only used for dry runs
+             'max_ifile_len': max_ifile_len,
+             'max_ofile_len': max_ofile_len,
+             're_pattern': re.compile(opts.PATTERN, 0),
+             'start': time.time(),
+             'dryrun_written_files': {},
+    }
+
+    for i in range(len(files)):
+        file_pair = files[i]
+        ifile = file_pair[0]
+        ofile = file_pair[1]
+        change_file(opts, ifile, ofile, stats)
+
+    change_summary(opts, files, stats)
+
+
+def main():
+    '''
+    Main.
+    '''
+    opts = getopts()
+    files = get_files(opts)
+    info(opts, files)
+    change(opts, files)
+
+
+if __name__ == "__main__":
+    main()
