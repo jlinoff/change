@@ -282,10 +282,10 @@ def get_files(opts):
     for path_pattern in opts.FILES:
         for path in glob.glob(path_pattern):
             if os.path.exists(path) is False:
-                warn('File does not exist: "{}".'.format(path))
+                warning('File does not exist: "{}".'.format(path))
                 continue
             elif os.path.isfile(path) is False:
-                warn('File is not a file: "{}".'.format(path))
+                warning('File is not a file: "{}".'.format(path))
                 continue
 
             # Look for the longest common directory name.
