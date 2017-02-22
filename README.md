@@ -1,4 +1,6 @@
 # change
+[![Releases](https://img.shields.io/github/release/jlinoff/change.svg?style=flat)](https://github.com/jlinoff/change/releases)
+
 Python script to change the contents or names of a set of files using
 regular expressions.
 
