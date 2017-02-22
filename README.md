@@ -43,8 +43,8 @@ tree. To see other examples look at test/test.sh.
 
 
 If you want to substitute characters that used in regular expressions
-like '.', you must escape it with a backslash '\.'.
+like '.', you must escape it with a backslash '\\.'.
 
-If you want to only replace words use '\b'.
+If you want to only replace words use '\\b' like this `'\\bfoobarspam\\b'`.
 
 For other options see the documentation for Python regular expressions.
