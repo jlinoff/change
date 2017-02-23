@@ -111,6 +111,7 @@ import time
 #VERSION = '1.0.1'    # 2017-02-22
 #VERSION = '1.0.2'    # 2017-02-22
 VERSION = '1.0.3'    # 2017-02-22
+VERSION = '1.0.4'    # 2017-02-23
 
 
 def getopts():
@@ -282,8 +283,11 @@ def get_files(opts):
     '''
 
     # Find the longest prefix for all input file names.
-    ifiles = []
-    prefix = []
+    # When this section completes, the prefix list will
+    # contain the portions of the path that are common
+    # to all input files.
+    ifiles = []  # the flattened list of input files from globs (e.g. /foo/*/bar/*.sh)
+    prefix = []  # the parts of the directory
     for path_pattern in opts.FILES:
         for path in glob.glob(path_pattern):
             if os.path.exists(path) is False:
@@ -294,9 +298,9 @@ def get_files(opts):
                 continue
 
             # Look for the longest common directory name.
-            ifile = os.path.abspath(path)
-            ifiles.append((path, ifile))
-            dirs = os.path.dirname(ifile).split(os.sep)
+            apath = os.path.abspath(path)
+            ifiles.append((path, apath))  # pair: (relpath, abspath)
+            dirs = os.path.dirname(apath).split(os.sep)
             if len(prefix) == 0:
                 prefix = dirs
             else:
@@ -304,7 +308,7 @@ def get_files(opts):
                 num = min(len(prefix), len(dirs))
                 prefix = prefix[:num]  # Can never be larger than this
                 for i in range(num):
-                    if prefix[i] != dirs[i]:
+                    if prefix[i] != dirs[i]:  # doesn't match, truncate and exit
                         prefix = prefix[:i]
                         break
 
@@ -320,16 +324,20 @@ def get_files(opts):
     prefix_str_len = len(prefix_str)
     files = []
     for fpair in ifiles:
-        ifile_rel = fpair[0]
-        ifile = fpair[1]  # abs path
-        relpath = ifile[prefix_str_len:]
-        if relpath[0] == os.path.sep:
-            relpath = relpath[1:]
+        ifile = fpair[0]
         if opts.prefix != '':
+            # Strip out the prefix common to the input
+            # files and replace it with the prefix specified
+            # by the user for the output files.
+            # We need to use the abspath for that.
+            relpath = fpair[1][prefix_str_len:]
+            if relpath[0] == os.path.sep:
+                relpath = relpath[1:]
             ofile = opts.prefix + relpath
         else:
-            ofile = relpath
-        files.append((ifile_rel, ofile))
+            # Overwrite the existing file.
+            ofile = fpair[0]
+        files.append((ifile, ofile))
 
     return files
 
@@ -460,8 +468,11 @@ def change_file_modify(opts, ifile, stats, lstats):
             if os.path.exists(lstats['ofile']):
                 warning('Overwriting file: {} --> {}'.format(ifile, lstats['ofile']))
 
-        with open(lstats['ofile'], 'w') as ofp:
-            ofp.write(lstats['ofile_content'])
+        try:
+            with open(lstats['ofile'], 'w') as ofp:
+                ofp.write(lstats['ofile_content'])
+        except OSError as exc:
+            warning('Write failed for {}: {}'.format(lstats['ofile'], exc))
 
         try:
             os.chmod(lstats['ofile'], lstats['ifile_mode'])
@@ -556,6 +567,10 @@ def main():
     '''
     opts = getopts()
     files = get_files(opts)
+    if len(files) == 0:
+        warning('No files found')
+        return
+    
     info(opts, files)
     change(opts, files)
 
