@@ -109,7 +109,8 @@ import time
 
 #VERSION = '1.0.0'    # 2015-12-21
 #VERSION = '1.0.1'    # 2017-02-22
-VERSION = '1.0.2'    # 2017-02-22
+#VERSION = '1.0.2'    # 2017-02-22
+VERSION = '1.0.3'    # 2017-02-22
 
 
 def getopts():
@@ -394,7 +395,7 @@ def change_file_stats(opts, ifile, stats, lstats, idx):
             print('  =====  =======  =======  ==========  ==========  {}  {}'.format('='*stats['max_ifile_len'],
                                                                                      '='*stats['max_ofile_len']))
 
-        print('  {:>5}  {:<7}  {:<7}  {:>10}  {:>10}  {:{}}  {:{}}'.format(idx+1,
+        print('  {:>5}  {:>7}  {:>7}  {:>10}  {:>10}  {:{}}  {:{}}'.format(idx+1,
                                                                            str(lstats['ofile_content_num_changes']),
                                                                            str(lstats['ofile_name_num_changes']),
                                                                            len(lstats['ifile_content']),
@@ -525,8 +526,8 @@ def change(opts, files):
     '''
     Change the files and the contents.
     '''
-    max_ifile_len = 2 + max(10, max([len(fpair[0]) for fpair in files]))
-    max_ofile_len = 2 + max(11, max([len(fpair[1]) for fpair in files]))
+    max_ifile_len = max(10, max([len(fpair[0]) for fpair in files]))
+    max_ofile_len = max(11, max([len(fpair[1]) for fpair in files]))
     stats = {'num_files_with_name_changes': 0,
              'num_files_with_content_changes': 0,
              'num_content_changes': 0,
